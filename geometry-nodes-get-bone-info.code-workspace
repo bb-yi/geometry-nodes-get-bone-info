@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "geometrynodes-get-bone-info",
+			"path": "geometrynodes-get-bone-info"
+		}
+	],
+	"settings": {}
+}

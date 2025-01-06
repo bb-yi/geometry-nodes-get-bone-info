@@ -53,9 +53,9 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
     # 属性定义
     blender_version = bpy.app.version
 
-    def create_node_driver(self, driver, type, val_type, target_object, target_path):
+    def create_node_driver(self, driver, type, val_type, target_object, target_path, expression="var"):
         driver.type = type
-        driver.expression = "var"
+        driver.expression = expression
         # 设置驱动器的变量
         variable = driver.variables.new()
         variable.name = "var"  # 变量名
@@ -64,15 +64,15 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
         variable.targets[0].id = target_object
         variable.targets[0].data_path = target_path
 
-    def add_vector_node_with_driver(self, node_tree, armature, bone, var_path1, var_path2, var_path3, location=(0, 0)):
+    def add_vector_node_with_driver(self, node_tree, armature, bone, var_path1, var_path2, var_path3, expression1="var", expression2="var", expression3="var", location=(0, 0)):
         vector_node = node_tree.nodes.new(type="FunctionNodeInputVector")
         vector_node.location = location
         driver = vector_node.driver_add("vector", 0).driver
         driver2 = vector_node.driver_add("vector", 1).driver
         driver3 = vector_node.driver_add("vector", 2).driver
-        self.create_node_driver(driver, "SCRIPTED", "OBJECT", armature, var_path1)
-        self.create_node_driver(driver2, "SCRIPTED", "OBJECT", armature, var_path2)
-        self.create_node_driver(driver3, "SCRIPTED", "OBJECT", armature, var_path3)
+        self.create_node_driver(driver, "SCRIPTED", "OBJECT", armature, var_path1, expression=expression1)
+        self.create_node_driver(driver2, "SCRIPTED", "OBJECT", armature, var_path2, expression=expression2)
+        self.create_node_driver(driver3, "SCRIPTED", "OBJECT", armature, var_path3, expression=expression3)
         return vector_node
 
     def add_float_node_with_driver(self, node_tree, armature, bone, var_path, location=(0, 0)):
@@ -104,9 +104,23 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
             armature_name_socket.hide_value = True
             bone_name_socket.hide_value = True
         head_location_node = self.add_vector_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].head[0]', f'pose.bones["{bone.name}"].head[1]', f'pose.bones["{bone.name}"].head[2]')
-        tail_location_node = self.add_vector_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].tail[0]', f'pose.bones["{bone.name}"].tail[1]', f'pose.bones["{bone.name}"].tail[2]', (0, -150))
-        rotation_node = self.add_vector_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].rotation_euler[0]', f'pose.bones["{bone.name}"].rotation_euler[1]', f'pose.bones["{bone.name}"].rotation_euler[2]', (0, -300))
-        length_node = self.add_float_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].length', (0, -450))
+        tail_location_node = self.add_vector_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].tail[0]', f'pose.bones["{bone.name}"].tail[1]', f'pose.bones["{bone.name}"].tail[2]', location=(0, -150))
+        rotation_node = self.add_vector_node_with_driver(
+            group, armature, bone, f'pose.bones["{bone.name}"].rotation_euler[0]', f'pose.bones["{bone.name}"].rotation_euler[1]', f'pose.bones["{bone.name}"].rotation_euler[2]', location=(0, -300)
+        )
+        quaternion_node = self.add_vector_node_with_driver(
+            group,
+            armature,
+            bone,
+            f'pose.bones["{bone.name}"].rotation_quaternion',
+            f'pose.bones["{bone.name}"].rotation_quaternion',
+            f'pose.bones["{bone.name}"].rotation_quaternion',
+            location=(0, -450),
+            expression1='var.to_euler("XYZ").x',
+            expression2='var.to_euler("XYZ").y',
+            expression3='var.to_euler("XYZ").z',
+        )
+        length_node = self.add_float_node_with_driver(group, armature, bone, f'pose.bones["{bone.name}"].length', location=(0, -600))
 
         if bpy.app.version < (4, 0, 0):
             group.outputs.new("NodeSocketVector", "头部位置")
@@ -118,8 +132,12 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
             group.outputs.new("NodeSocketVector", "欧拉角XYZ")
             group.links.new(rotation_node.outputs[0], group_output.inputs[2])
 
+            group.outputs.new("NodeSocketVector", "四元数转欧拉角XYZ")
+            group.links.new(quaternion_node.outputs[0], group_output.inputs[3])
+
             group.outputs.new("NodeSocketFloat", "长度")
-            group.links.new(length_node.outputs[0], group_output.inputs[3])
+            group.links.new(length_node.outputs[0], group_output.inputs[4])
+
         else:
             group.interface.new_socket(name="头部位置", socket_type="NodeSocketVector", in_out="OUTPUT")
             group.links.new(head_location_node.outputs[0], group_output.inputs[0])
@@ -127,8 +145,10 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
             group.links.new(tail_location_node.outputs[0], group_output.inputs[1])
             group.interface.new_socket(name="欧拉角XYZ", socket_type="NodeSocketVector", in_out="OUTPUT")
             group.links.new(rotation_node.outputs[0], group_output.inputs[2])
+            group.interface.new_socket(name="四元数转欧拉角XYZ", socket_type="NodeSocketVector", in_out="OUTPUT")
+            group.links.new(quaternion_node.outputs[0], group_output.inputs[3])
             group.interface.new_socket(name="长度", socket_type="NodeSocketFloat", in_out="OUTPUT")
-            group.links.new(length_node.outputs[0], group_output.inputs[3])
+            group.links.new(length_node.outputs[0], group_output.inputs[4])
 
         return group
 
@@ -157,7 +177,7 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
             if bpy.app.version < (4, 0, 0):
                 for group_temp in node_groups:
                     if group_temp.bl_idname == "GeometryNodeTree" and group_temp.name == f"{active_bone.name}_Info":
-                        if len(group_temp.inputs) == 2 and len(group_temp.outputs) == 4:
+                        if len(group_temp.inputs) == 2 and len(group_temp.outputs) == 5:
                             if group_temp.inputs[0].name == f"_{armature.name}" and group_temp.inputs[1].name == f"_{active_bone.name}":
                                 is_repeat = True
                                 group = group_temp
@@ -165,7 +185,7 @@ class AddBoneInfoNodeOperator(bpy.types.Operator):
             else:
                 for group_temp in node_groups:
                     if group_temp.bl_idname == "GeometryNodeTree" and group_temp.name == f"{active_bone.name}_Info":
-                        if len(group_temp.interface.items_tree) == 6:
+                        if len(group_temp.interface.items_tree) == 7:
                             is_repeat = True
                             group = group_temp
             print(is_repeat)
